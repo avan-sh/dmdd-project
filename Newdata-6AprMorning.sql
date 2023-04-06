@@ -371,9 +371,10 @@ INSERT INTO Kitchen (AddressID, ContactID, CuisineID, KitchenName)
 VALUES 
   (15, 1, 1, 'Kitchen1'),
   (16, 2, 2, 'Kitchen2'),
-  (17, 3, 2, 'Kitchen3');
+  (17, 3, 2, 'Kitchen3'),
+  (18, 4, 1, 'Kitchen4');
 
- select * from Kitchen;
+ SELECT * from Kitchen WHERE 1=1;
  --Rating will be a computed column
 
 
@@ -463,38 +464,36 @@ DROP TABLE IF EXISTS Orders;
   OrderPrice DECIMAL(10,2),
   OrderDeliveryAddressID INT,
   OrderDate DATETIME default GETDATE()
-  CONSTRAINT fk_CustomerID2 FOREIGN KEY (CustomerID) REFERENCES Customer(CustomerID),
-  CONSTRAINT fk_KitchenID2 FOREIGN KEY (KitchenID) REFERENCES Kitchen(KitchenID)
-  CONSTRAINT fk_OrderDeliveryAddressID FOREIGN KEY (AddressID) REFERENCES Address(AddressID)
+  CONSTRAINT fk_CustomerID FOREIGN KEY (CustomerID) REFERENCES Customer(CustomerID),
+  CONSTRAINT fk_KitchenID FOREIGN KEY (KitchenID) REFERENCES Kitchen(KitchenID),
+  CONSTRAINT fk_OrderDeliveryAddressID FOREIGN KEY (OrderDeliveryAddressID) REFERENCES Address(AddressID)
 );
 
-DROP TABLE Orders;
 
 --Insert 10 sample entries
-INSERT INTO Orders (CustomerID, KitchenID, OrderPrice) VALUES
-(1, 1, 25.00),
-(1, 1, 35.50),
-(2, 2, 15.75),
-(2, 2, 42.00),
-(2, 2, 28.25),
-(2, 2, 18.50),
-(3, 1, 20.00),
-(3, 1, 30.75),
-(3, 2, 19.00),
-(3, 2, 27.50),
-(4, 1, 20.00),
-(4, 1, 30.75),
-(4, 3, 19.00),
-(4, 3, 27.50),
-(5, 1, 20.00),
-(5, 1, 30.75),
-(6, 3, 19.00),
-(6, 3, 27.50),
-(7, 1, 19.00),
-(7, 1, 27.50),
-(8, 2, 19.00),
-(8, 2, 27.50);
-
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(1, 1, 25.00, 1),
+(1, 1, 35.50, 1),
+(2, 2, 15.75, 2),
+(2, 2, 42.00, 2),
+(2, 2, 28.25, 2),
+(2, 2, 18.50, 2),
+(3, 1, 20.00, 3),
+(3, 1, 30.75, 3),
+(3, 2, 19.00, 3),
+(3, 2, 27.50, 3),
+(4, 1, 20.00, 4),
+(4, 1, 30.75, 4),
+(4, 3, 19.00, 4),
+(4, 3, 27.50, 4),
+(5, 1, 20.00, 5),
+(5, 1, 30.75, 5),
+(6, 3, 19.00, 6),
+(6, 3, 27.50, 6),
+(7, 1, 19.00, 7),
+(7, 1, 27.50, 7),
+(8, 2, 19.00, 8),
+(8, 2, 27.50, 8);
 
 
 
