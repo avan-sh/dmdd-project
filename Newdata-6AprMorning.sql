@@ -1,7 +1,7 @@
 
 
 
-
+CREATE DATABASE IF NOT EXISTS AVANEESH_DB;
 
  
  drop table AddressType;
@@ -298,6 +298,38 @@ VALUES
 
 select * from Customer
 
+
+
+CREATE FUNCTION MostOrderedFoodItemName(@KitchenID INT)
+RETURNS VARCHAR(255)
+AS
+BEGIN
+DECLARE @mostOrderedFoodItemName varchar(255);
+with temp as (select * from dbo.Orders o where o.KitchenID = @KitchenID ), 
+temp2 as (
+select FoodItemID, SUM (Quantity) TotalQuantityOrderedForThatFoodItemID, RANK() OVER (ORDER BY SUM (Quantity) DESC)  
+as FoodItemRank from dbo.OrderItems oi
+inner join temp t 
+on t.OrderID = oi.OrderID
+group by oi.FoodItemID)
+
+
+SELECT TOP 1
+        @mostOrderedFoodItemName = ft.Name
+    FROM temp2
+    INNER JOIN dbo.FoodItem ft ON temp2.FoodItemID = ft.FoodItemID
+    WHERE FoodItemRank = 1;
+
+SET @mostOrderedFoodItemName = ISNULL(@mostOrderedFoodItemName, 'Yet to be determined');
+RETURN @mostOrderedFoodItemName;
+END
+-- Add a computed column to the Sales.Customer
+ALTER TABLE dbo.Kitchen
+ADD MostOrderedFoodItemName AS (dbo.MostOrderedFoodItemName(KitchenID));
+
+
+
+
 --12. CustomerAddress Table--
 drop table CustomerAddress ;
 -- Create the CustomerAddress table
@@ -355,6 +387,26 @@ VALUES
 
  select * from Kitchen;
  --Rating will be a computed column
+
+CREATE FUNCTION CurrentRatingAverage(@KitchenID INT)
+RETURNS FLOAT 
+AS
+BEGIN
+DECLARE @rating float;
+SET @rating =
+(SELECT AVG(rw.Rating)
+FROM dbo.Reviews rw
+WHERE KitchenID = @KitchenID
+GROUP BY KitchenID );
+
+SET @rating = ISNULL(@rating, 5);
+RETURN @rating;
+END
+-- Add a computed column to the Sales.Customer
+ALTER TABLE dbo.Kitchen
+ADD Rating AS (dbo.CurrentRatingAverage(KitchenID));
+
+
 --14. Equipment Table--
  
  CREATE TABLE Equipment (
