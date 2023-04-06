@@ -613,7 +613,7 @@ VALUES
   
 -- 20. Deliver Drivers table-- 
  
-DROP TABLE DeliveryDrivers;
+DROP TABLE IF EXISTS DeliveryDrivers;
  
  CREATE TABLE DeliveryDrivers (
   DeliveryDriverID INT IDENTITY PRIMARY KEY,
@@ -626,12 +626,12 @@ DROP TABLE DeliveryDrivers;
 );
 
 INSERT INTO DeliveryDrivers (AddressID, PersonID, DeliveryZoneID) VALUES 
-  (7, 9, 7),
-  (2, 10, 5),
-  (9, 11, 6),
-  (1, 12, 7),
-  (2, 13, 3),
-  (9, 14, 3);
+  (9, 9, 1),
+  (10, 10, 2),
+  (11, 11, 3),
+  (12, 12, 4),
+  (13, 13, 1),
+  (14, 14, 1);
   
  
 select * from DeliveryDrivers; 
