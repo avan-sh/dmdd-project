@@ -2,6 +2,7 @@ CREATE DATABASE IF NOT EXISTS AVANEESH_DB;
 
 USE AVANEESH_DB;
 
+
  
 DROP TABLE IF EXISTS AddressType;
  
@@ -78,8 +79,7 @@ VALUES
   ;
   -- ('kitchen5@example.com', '555-4321-789', '555-8765-789'),
   -- ('kitchen6@example.com', '555-4321-789', '555-8765-789');
- 
- 
+
  SELECT * FROM Contact;
 
 
@@ -250,7 +250,7 @@ VALUES
   --Kitchen
   (1, 1, '111 Beacon St', '', 'Boston', 'MA', '02215'),
   (1, 2, '222 Commonwealth Ave', '', 'Boston', 'MA', '02115'),
-  (1, 2, '222 Centre St', '', 'Cambridge', 'MA', '02114'),
+  (1, 3, '222 Centre St', '', 'Cambridge', 'MA', '02114'),
   (1, 4, '333 Boylston St', '', 'Cambridge', 'MA', '02134'),
   --CollectionPoint
   (4, 1, '888 Huntington Ave', '', 'Boston', 'MA', '02215'),
@@ -371,8 +371,8 @@ INSERT INTO Kitchen (AddressID, ContactID, CuisineID, KitchenName)
 VALUES 
   (15, 1, 1, 'Kitchen1'),
   (16, 2, 2, 'Kitchen2'),
-  (17, 3, 2, 'Kitchen3'),
-  (18, 4, 1, 'Kitchen4');
+  (17, 3, 3, 'Kitchen3'),
+  (18, 4, 4, 'Kitchen4');
 
  SELECT * from Kitchen WHERE 1=1;
  --Rating will be a computed column
@@ -470,34 +470,90 @@ DROP TABLE IF EXISTS Orders;
 );
 
 
---Insert 10 sample entries
-INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
-(1, 1, 25.00, 1),
-(1, 1, 35.50, 1),
-(2, 2, 15.75, 2),
-(2, 2, 42.00, 2),
-(2, 2, 28.25, 2),
-(2, 2, 18.50, 2),
-(3, 1, 20.00, 3),
-(3, 1, 30.75, 3),
-(3, 2, 19.00, 3),
-(3, 2, 27.50, 3),
-(4, 1, 20.00, 4),
-(4, 1, 30.75, 4),
-(4, 3, 19.00, 4),
-(4, 3, 27.50, 4),
-(5, 1, 20.00, 5),
-(5, 1, 30.75, 5),
-(6, 3, 19.00, 6),
-(6, 3, 27.50, 6),
-(7, 1, 19.00, 7),
-(7, 1, 27.50, 7),
-(8, 2, 19.00, 8),
-(8, 2, 27.50, 8);
+
+CREATE FUNCTION CheckAddressBelongsToCustomer(@CustomerID INT, @AddressID INT)
+RETURNS INT
+AS
+BEGIN
+--Check if Address belongs to Customer or is a CollectionPoint
+    DECLARE @Result INT;
+    SET @Result = 0;
+    DECLARE @CustomerAddressCount INT;
+    DECLARE @CollectionPointCount BIT;
+    
+    SELECT @CustomerAddressCount = Count(*)
+    FROM CustomerAddress
+    WHERE CustomerAddress.AddressID = @AddressID
+    AND CustomerAddress.CustomerID = @CustomerID;
+
+    SELECT @CollectionPointCount = Count(*)
+    FROM Address
+    JOIN AddressType ON Address.AddressTypeID = AddressType.AddressTypeID
+    WHERE Address.AddressID = @AddressID
+    AND AddressType.Name = 'Collection points';
 
 
+    SET @Result = @CustomerAddressCount + @CollectionPointCount;
+    RETURN @Result;
+END
+;
 
-select * from Orders;
+ALTER TABLE Orders
+ADD CONSTRAINT chk_OrderDeliveryAddressID
+CHECK (dbo.CheckAddressBelongsToCustomer(CustomerID, OrderDeliveryAddressID) > 0);
+
+
+CREATE or ALTER TRIGGER [dbo].[trgOrderInsert]
+ON [dbo].[Orders]
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @KitchenAddressID INT;
+    DECLARE @KitchenZoneID INT;
+    DECLARE @OrderID INT;
+    DECLARE @OrderDeliveryAddressID INT;
+    DECLARE @KitchenID INT;
+    DECLARE @DeliveryZoneID INT;
+
+    SELECT @OrderID = OrderID, 
+           @OrderDeliveryAddressID = OrderDeliveryAddressID, 
+           @KitchenID = KitchenID
+           FROM INSERTED;
+    SELECT @KitchenAddressID = AddressID FROM Kitchen WHERE KitchenID = @KitchenID;
+    SELECT @DeliveryZoneID = DeliveryZoneID FROM Address WHERE AddressID = @OrderDeliveryAddressID;
+    SELECT @KitchenZoneID = DeliveryZoneID FROM Address WHERE AddressID = @KitchenAddressID;
+	
+
+    IF @KitchenZoneID != @DeliveryZoneID
+    BEGIN
+        RAISERROR('Order Delivery Address is not in the same zone as the Kitchen', 16, 1);
+        ROLLBACK TRANSACTION;
+    END
+    ELSE
+      BEGIN
+        
+	    INSERT INTO Deliveries (
+	    OrderID,
+	    DeliveryDriverID,
+	    PickUpAddressID,
+	    DeliveryAddressID,
+	    DeliveryStatus
+	    )
+        VALUES (
+        @OrderID,
+        (Select top 1 DeliveryDriverID from DeliveryDrivers
+         where DeliveryZoneID = @KitchenZoneID
+         order by NEWID()),
+         @KitchenAddressID,
+         @OrderDeliveryAddressID,
+         'Order Recieved'
+         )
+    END
+END
+;
+
+
 
 --17. Reviews Table--      
 
@@ -512,31 +568,7 @@ CREATE TABLE Reviews (
 );
 
 
-INSERT INTO Reviews (OrderID, KitchenID, Rating, ReviewText) VALUES
-(1, 1, 4, 'The food was delicious!'),
-(2, 1, 3, 'The service was good, but the food was just okay.'),
-(3, 2, 5, 'Absolutely loved the food and service!'),
-(4, 2, 2, 'The food was terrible and the service was slow.'),
-(5, 2, 4, 'The food was great and the atmosphere was lovely.'),
-(6, 2, 5, 'We had a fantastic experience!'),
-(7, 1, 3, 'The food was decent, but the service was lacking.'),
-(8, 1, 5, 'One of the best meals I have ever had!'),
-(9, 2, 4, 'The food was really good and the service was attentive.'),
-(10, 2, 2, 'I did not enjoy my meal at all.'),
-(11, 1, 4, 'The food was really good and the service was attentive.'),
-(12, 1, 2, 'I did not enjoy my meal at all.'),
-(13, 3, 4, 'The food was delicious!'),
-(14, 3, 3, 'The service was good, but the food was just okay.'),
-(15, 1, 5, 'Absolutely loved the food and service!'),
-(16, 1, 2, 'The food was terrible and the service was slow.'),
-(17, 3, 4, 'The food was great and the atmosphere was lovely.'),
-(18, 3, 5, 'We had a fantastic experience!'),
-(19, 1, 3, 'The food was decent, but the service was lacking.'),
-(20, 1, 5, 'One of the best meals I have ever had!'),
-(21, 2, 4, 'The food was really good and the service was attentive.'),
-(22, 2, 2, 'I did not enjoy my meal at all.');
 
-SELECT * FROM Reviews;
 
 --18. FoodItem Table--      
  
@@ -552,8 +584,6 @@ CREATE TABLE FoodItem (
   FOREIGN KEY (DietTypeID) REFERENCES DietType(DietTypeID),
   FOREIGN KEY (DishTypeID) REFERENCES DishType(DishTypeID)
 );
-
-
 
 INSERT INTO FoodItem (KitchenID, DietTypeID, DishTypeID, Name, Description, Price)
 VALUES
@@ -571,6 +601,9 @@ VALUES
  
  select * from FoodItem;
 
+
+
+
 --19. OrderItems Table--      
 
 CREATE TABLE OrderItems (
@@ -585,31 +618,7 @@ CREATE TABLE OrderItems (
 );
 
 
-INSERT INTO OrderItems (OrderID, FoodItemID, Quantity, ItemPrice)
-VALUES
-  (1, 1, 2, 10.99),
-  (2, 2, 1, 5.99),
-  (3, 3, 4, 8.99),
-  (4, 4, 2, 10.99),
-  (5, 5, 1, 5.99),
-  (6, 6, 4, 8.99),
-  (7, 7, 2, 10.99),
-  (8, 8, 1, 5.99),
-  (9, 9, 4, 8.99),
-  (10, 10, 2, 10.99),
-  (11, 1, 1, 5.99),
-  (12, 2, 4, 8.99),
-  (13, 3, 2, 10.99),
-  (14, 4, 1, 5.99),
-  (15, 5, 4, 8.99),
-  (16, 6, 2, 10.99),
-  (17, 7, 1, 5.99),
-  (18, 8, 4, 8.99),
-  (19, 9, 2, 10.99),
-  (20, 10, 1, 5.99),
-  (21, 1, 4, 8.99),
-  (22, 2, 2, 10.99);
-   
+  
   
 -- 20. Deliver Drivers table-- 
  
@@ -624,8 +633,8 @@ DROP TABLE IF EXISTS DeliveryDrivers;
   FOREIGN KEY (PersonID) REFERENCES Person(PersonID),
   FOREIGN KEY (DeliveryZoneID) REFERENCES DeliveryZone(DeliveryZoneID)
 );
-
-INSERT INTO DeliveryDrivers (AddressID, PersonID, DeliveryZoneID) VALUES 
+ 
+ INSERT INTO DeliveryDrivers (AddressID, PersonID, DeliveryZoneID) VALUES 
   (9, 9, 1),
   (10, 10, 2),
   (11, 11, 3),
@@ -633,21 +642,21 @@ INSERT INTO DeliveryDrivers (AddressID, PersonID, DeliveryZoneID) VALUES
   (13, 13, 1),
   (14, 14, 1);
   
+select * from DeliveryDrivers;
  
-select * from DeliveryDrivers; 
 
 
 -- 21. Deliveries table-- 
  
+Drop TABLE Deliveries;
 
 CREATE TABLE Deliveries (
-  DeliveryID INT NOT NULL,
+  DeliveryID INT NOT NULL IDENTITY PRIMARY KEY,
   OrderID INT NOT NULL,
   DeliveryDriverID INT NOT NULL,
   PickUpAddressID INT NOT NULL,
   DeliveryAddressID INT NOT NULL,
   DeliveryStatus VARCHAR(50),
-  PRIMARY KEY (DeliveryID, OrderID),
   FOREIGN KEY (DeliveryDriverID) REFERENCES DeliveryDrivers(DeliveryDriverID),
   FOREIGN KEY (PickUpAddressID) REFERENCES Address(AddressID),
   FOREIGN KEY (DeliveryAddressID) REFERENCES Address(AddressID),
@@ -656,43 +665,35 @@ CREATE TABLE Deliveries (
 
 
 
-INSERT INTO Deliveries (DeliveryID, OrderID, DeliveryDriverID, PickUpAddressID, DeliveryAddressID, DeliveryStatus)
-VALUES 
-(1, 1, 3, 1, 1, 'Out for delivery'),
-(2, 2, 2, 1, 17, 'In transit'),
-(3, 3, 3, 1, 16, 'Out for delivery'),
-(4, 4, 2, 1, 17, 'In transit'),
-(5, 5, 3, 1, 16, 'Out for delivery'),
-(6, 6, 2, 1, 17, 'In transit'),
-(7, 7, 3, 1, 16, 'Out for delivery'),
-(8, 8, 2, 1, 17, 'In transit'),
-(9, 9, 3, 1, 16, 'Out for delivery'),
-(10, 10, 2, 1, 17, 'In transit'),
-(11, 11, 3, 1, 16, 'Out for delivery'),
-(12, 12, 2, 1, 17, 'In transit'),
-(13, 13, 3, 1, 16, 'Out for delivery'),
-(14, 14, 2, 1, 17, 'In transit'),
-(15, 15, 3, 1, 16, 'Out for delivery'),
-(16, 16, 2, 1, 17, 'In transit'),
-(17, 17, 3, 1, 16, 'Out for delivery'),
-(18, 18, 2, 1, 17, 'In transit'),
-(19, 19, 3, 1, 16, 'Out for delivery'),
-(20, 20, 2, 1, 17, 'In transit'),
-(19, 21, 3, 1, 16, 'Out for delivery'),
-(20, 22, 2, 1, 17, 'In transit');
+-- INSERT INTO Deliveries (DeliveryID, OrderID, DeliveryDriverID, PickUpAddressID, DeliveryAddressID, DeliveryStatus)
+-- VALUES 
+-- (1, 1, 3, 1, 1, 'Out for delivery'),
+-- (2, 2, 2, 1, 17, 'In transit'),
+-- (3, 3, 3, 1, 16, 'Out for delivery'),
+-- (4, 4, 2, 1, 17, 'In transit'),
+-- (5, 5, 3, 1, 16, 'Out for delivery'),
+-- (6, 6, 2, 1, 17, 'In transit'),
+-- (7, 7, 3, 1, 16, 'Out for delivery'),
+-- (8, 8, 2, 1, 17, 'In transit'),
+-- (9, 9, 3, 1, 16, 'Out for delivery'),
+-- (10, 10, 2, 1, 17, 'In transit'),
+-- (11, 11, 3, 1, 16, 'Out for delivery'),
+-- (12, 12, 2, 1, 17, 'In transit'),
+-- (13, 13, 3, 1, 16, 'Out for delivery'),
+-- (14, 14, 2, 1, 17, 'In transit'),
+-- (15, 15, 3, 1, 16, 'Out for delivery'),
+-- (16, 16, 2, 1, 17, 'In transit'),
+-- (17, 17, 3, 1, 16, 'Out for delivery'),
+-- (18, 18, 2, 1, 17, 'In transit'),
+-- (19, 19, 3, 1, 16, 'Out for delivery'),
+-- (20, 20, 2, 1, 17, 'In transit'),
+-- (19, 21, 3, 1, 16, 'Out for delivery'),
+-- (20, 22, 2, 1, 17, 'In transit');
 
 
 
 
 select * from Deliveries;
-
-
-
-
-
-
-
-
 
 
 
@@ -715,7 +716,7 @@ RETURN @rating;
 END
 ;
 
--- Add a computed column to the Sales.Customer
+-- Add a computed column to the dbo.Kitchen
 ALTER TABLE dbo.Kitchen
 ADD Rating AS (dbo.CurrentRatingAverage(KitchenID));
 
@@ -752,5 +753,195 @@ ADD MostOrderedFoodItemName AS (dbo.MostOrderedFoodItemName(KitchenID));
 
 SELECT * FROM dbo.Kitchen;
 
+select * from dishtype; 
+
+select * from Deliveries 
+
+--Insert 10 sample entries
+
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(1, 1, 25.00, 1);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(1, 1, 35.50, 1);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(2, 2, 15.75, 2);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(2, 2, 42.00, 2);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(2, 2, 28.25, 2);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(2, 2, 18.50, 2);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(3, 1, 20.00, 19);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(3, 1, 30.75, 19);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(3, 3, 19.00, 3);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(3, 2, 27.50, 20);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(4, 1, 20.00, 19);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(4, 1, 30.75, 19);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(4, 3, 19.00, 21);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(4, 4, 27.50, 4);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(5, 1, 20.00, 5);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(5, 1, 30.75, 5);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(6, 2, 19.00, 6);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(6, 3, 27.50, 21);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(7, 1, 19.00, 19);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(7, 3, 27.50, 7);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(8, 2, 19.00, 20);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(8, 4, 27.50, 8);
+--CollectionPoint;
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(1, 4, 25.00, 22);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(2, 3, 10.00, 21);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(3, 2, 13.00, 20);
+INSERT INTO Orders (CustomerID, KitchenID, OrderPrice, OrderDeliveryAddressID) VALUES
+(4, 1, 19.00, 19);
+
+select * from Orders;
+
+
+
+INSERT INTO OrderItems (OrderID, FoodItemID, Quantity, ItemPrice)
+VALUES
+  (1, 1, 2, 10.99),
+  (2, 2, 1, 5.99),
+  (3, 3, 4, 8.99),
+  (4, 4, 2, 10.99),
+  (5, 5, 1, 5.99),
+  (6, 6, 4, 8.99),
+  (7, 7, 2, 10.99),
+  (8, 8, 1, 5.99),
+  (9, 9, 4, 8.99),
+  (10, 10, 2, 10.99),
+  (11, 1, 1, 5.99),
+  (12, 2, 4, 8.99),
+  (13, 3, 2, 10.99),
+  (14, 4, 1, 5.99),
+  (15, 5, 4, 8.99),
+  (16, 6, 2, 10.99),
+  (17, 7, 1, 5.99),
+  (18, 8, 4, 8.99),
+  (19, 9, 2, 10.99),
+  (20, 10, 1, 5.99),
+  (21, 1, 4, 8.99),
+  (22, 2, 2, 10.99);
+
+INSERT INTO Reviews (OrderID, KitchenID, Rating, ReviewText) VALUES
+(1, 1, 4, 'The food was delicious!'),
+(2, 1, 3, 'The service was good, but the food was just okay.'),
+(3, 2, 5, 'Absolutely loved the food and service!'),
+(4, 2, 2, 'The food was terrible and the service was slow.'),
+(5, 2, 4, 'The food was great and the atmosphere was lovely.'),
+(6, 2, 5, 'We had a fantastic experience!'),
+(7, 1, 3, 'The food was decent, but the service was lacking.'),
+(8, 1, 5, 'One of the best meals I have ever had!'),
+(9, 2, 4, 'The food was really good and the service was attentive.'),
+(10, 2, 2, 'I did not enjoy my meal at all.'),
+(11, 1, 4, 'The food was really good and the service was attentive.'),
+(12, 1, 2, 'I did not enjoy my meal at all.'),
+(13, 3, 4, 'The food was delicious!'),
+(14, 3, 3, 'The service was good, but the food was just okay.'),
+(15, 1, 5, 'Absolutely loved the food and service!'),
+(16, 1, 2, 'The food was terrible and the service was slow.'),
+(17, 3, 4, 'The food was great and the atmosphere was lovely.'),
+(18, 3, 5, 'We had a fantastic experience!'),
+(19, 1, 3, 'The food was decent, but the service was lacking.'),
+(20, 1, 5, 'One of the best meals I have ever had!'),
+(21, 2, 4, 'The food was really good and the service was attentive.'),
+(22, 2, 2, 'I did not enjoy my meal at all.');
+
+SELECT * FROM Reviews; 
+ 
+ 
+
+--------Views----------------
+
+create or alter view kitchen_review_view as
+select A.KitchenID,
+[5]/totalcount*100 AS "5StarRatio",
+[4]/totalcount*100 AS "4StarRatio",
+[3]/totalcount*100 AS "3StarRatio",
+[2]/totalcount*100 AS "2StarRatio",
+[1]/totalcount*100 AS "1StarRatio",
+totalcount AS ReviewCount
+from (
+select  R.kitchenID, 
+		CAST(COUNT(CASE when rating=5 then 1 end)as float) [5],
+		CAST(COUNT(CASE when rating=4 then 1 end) as float) [4],
+		CAST(COUNT(CASE when rating=3 then 1 end) as float)[3],
+		CAST(COUNT(CASE when rating=2 then 1 end) AS FLOAT)[2],
+		CAST(COUNT(CASE when rating=1 then 1 end) AS FLOAT) [1],
+		CAST(Count(*)  as float) totalCount
+	--	COUNT(O.ORDERID) ORDERCOUNT
+		from reviews R 
+		--JOIN ORDERS O ON O.KITCHENID = R.KITCHENID
+		group by R.kitchenID
+) as  A;
+
+SELECT * FROM kitchen_review_view;
+
+
+CREATE VIEW ZoneAnalysis AS 
+select DISTINCT DeliveryZoneID,  City, State, Zipcode,
+(
+select COUNT(KitchenID) 
+from dbo.Kitchen k
+inner join dbo.Address a
+on k.AddressID = a.AddressID
+where a.DeliveryZoneID = d.DeliveryZoneID
+group by DeliveryZoneID
+)  as NumberOfKitchens, 
+(
+select COUNT(DeliveryDriverID) from dbo.DeliveryDrivers dd
+where dd.DeliveryZoneID = d.DeliveryZoneID
+group by dd.DeliveryZoneID
+) as DeliveryBoysAssignedInEachZone,
+--Total number of orders for that zone
+(
+select COUNT(OrderID) from dbo.Orders o
+inner join dbo.Kitchen k
+on k.KitchenID = o.KitchenID
+inner join dbo.Address a 
+on a.AddressID = k.AddressID
+WHERE a.DeliveryZoneID = d.DeliveryZoneID
+group by a.DeliveryZoneID
+) as TotalOrderPlacedInThatZone,
+(
+select COUNT(OrderID) from dbo.Orders o
+inner join dbo.Kitchen k
+on k.KitchenID = o.KitchenID
+inner join dbo.Address a 
+on a.AddressID = k.AddressID
+WHERE a.DeliveryZoneID = d.DeliveryZoneID and o.OrderDate >= DATEADD(hour, -24, GETDATE())
+group by a.DeliveryZoneID
+) as TotalOrderPlacedInThatZoneInLast24Hours,
+(
+select top 1 k.KitchenName  from dbo.Kitchen k
+inner join dbo.Address a
+on k.AddressID = a.AddressID
+where a.DeliveryZoneID = d.DeliveryZoneID 
+order by k.Rating DESC 
+
+) as HighestRatedKitchenNameInTheZone
+from dbo.DeliveryZone d ;
+-- Kitchen 2 zoneID10, orders 6
+
+select * from ZoneAnalysis;
 
 
