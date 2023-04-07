@@ -1,11 +1,10 @@
-CREATE DATABASE IF NOT EXISTS AVANEESH_DB;
+CREATE DATABASE IF NOT EXISTS Group12_DB;
 
-USE AVANEESH_DB;
+USE Group12_DB;
 
 
- 
 DROP TABLE IF EXISTS AddressType;
- 
+
 --1. AddressType Table--
 
 CREATE TABLE dbo.AddressType (
@@ -17,13 +16,12 @@ select * from dbo.AddressType;
 
 INSERT INTO AddressType (Name)
 VALUES 
-     ('Kitchen'),
+    ('Kitchen'),
     ('DeliveryDriver'),
     ('Customer'),
     ('Collection points');
-   
-   
-   select * from AddressType;
+
+select * from AddressType;
   
   --2.PersonType Table--
  
@@ -503,6 +501,42 @@ ADD CONSTRAINT chk_OrderDeliveryAddressID
 CHECK (dbo.CheckAddressBelongsToCustomer(CustomerID, OrderDeliveryAddressID) > 0);
 
 
+-- to check if OrderDeliveryAddressID belongs to the same ZONE as Kitchen
+
+CREATE FUNCTION CheckAddressBelongsToKitchenZone(@KitchenID INT, @AddressID INT)
+RETURNS INT
+AS
+BEGIN
+--Check if Address belongs to Customer or is a CollectionPoint
+    DECLARE @Result INT;
+    SET @Result = 0;
+    DECLARE @KitchenAddressID INT;
+    DECLARE @KitchenZoneID INT;
+    DECLARE @OrderDeliveryAddressZoneID INT;
+    
+    SELECT @KitchenAddressID = AddressID FROM Kitchen WHERE KitchenID = @KitchenID;
+    SELECT @KitchenZoneID = DeliveryZoneID FROM Address WHERE AddressID = @KitchenAddressID;
+    SELECT @OrderDeliveryAddressZoneID = DeliveryZoneID FROM Address WHERE AddressID = @AddressID;
+
+    IF @KitchenZoneID = @OrderDeliveryAddressZoneID
+    BEGIN
+        SET @Result = 1;
+    END
+    ELSE
+    BEGIN
+        SET @Result = 0;
+    END
+    RETURN @Result;
+END;
+
+
+ALTER TABLE Orders
+ADD CONSTRAINT chk_SameDeliveryZone
+CHECK (dbo.CheckAddressBelongsToKitchenZone(KitchenID, OrderDeliveryAddressID) > 0);
+
+
+
+
 CREATE or ALTER TRIGGER [dbo].[trgOrderInsert]
 ON [dbo].[Orders]
 AFTER INSERT
@@ -648,7 +682,7 @@ select * from DeliveryDrivers;
 
 -- 21. Deliveries table-- 
  
-Drop TABLE Deliveries;
+Drop TABLE IF EXISTS Deliveries;
 
 CREATE TABLE Deliveries (
   DeliveryID INT NOT NULL IDENTITY PRIMARY KEY,
@@ -665,30 +699,7 @@ CREATE TABLE Deliveries (
 
 
 
--- INSERT INTO Deliveries (DeliveryID, OrderID, DeliveryDriverID, PickUpAddressID, DeliveryAddressID, DeliveryStatus)
--- VALUES 
--- (1, 1, 3, 1, 1, 'Out for delivery'),
--- (2, 2, 2, 1, 17, 'In transit'),
--- (3, 3, 3, 1, 16, 'Out for delivery'),
--- (4, 4, 2, 1, 17, 'In transit'),
--- (5, 5, 3, 1, 16, 'Out for delivery'),
--- (6, 6, 2, 1, 17, 'In transit'),
--- (7, 7, 3, 1, 16, 'Out for delivery'),
--- (8, 8, 2, 1, 17, 'In transit'),
--- (9, 9, 3, 1, 16, 'Out for delivery'),
--- (10, 10, 2, 1, 17, 'In transit'),
--- (11, 11, 3, 1, 16, 'Out for delivery'),
--- (12, 12, 2, 1, 17, 'In transit'),
--- (13, 13, 3, 1, 16, 'Out for delivery'),
--- (14, 14, 2, 1, 17, 'In transit'),
--- (15, 15, 3, 1, 16, 'Out for delivery'),
--- (16, 16, 2, 1, 17, 'In transit'),
--- (17, 17, 3, 1, 16, 'Out for delivery'),
--- (18, 18, 2, 1, 17, 'In transit'),
--- (19, 19, 3, 1, 16, 'Out for delivery'),
--- (20, 20, 2, 1, 17, 'In transit'),
--- (19, 21, 3, 1, 16, 'Out for delivery'),
--- (20, 22, 2, 1, 17, 'In transit');
+----Creation of Deliveries is automated in the trigger of Orders table
 
 
 
@@ -755,7 +766,7 @@ SELECT * FROM dbo.Kitchen;
 
 select * from dishtype; 
 
-select * from Deliveries 
+select * from Deliveries;
 
 --Insert 10 sample entries
 
